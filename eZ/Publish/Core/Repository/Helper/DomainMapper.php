@@ -236,9 +236,9 @@ class DomainMapper
             throw new InvalidArgumentType('$contentType', 'SPI ContentType | API ContentType');
         }
 
-        $fieldIdentifierMap = array();
+        $fieldDefinitionsMap = array();
         foreach ($contentType->fieldDefinitions as $fieldDefinitions) {
-            $fieldIdentifierMap[$fieldDefinitions->id] = $fieldDefinitions->identifier;
+            $fieldDefinitionsMap[$fieldDefinitions->id] = $fieldDefinitions;
         }
 
         $fieldInFilterLanguagesMap = array();
@@ -253,37 +253,40 @@ class DomainMapper
         $fields = array();
         foreach ($spiFields as $spiField) {
             // We ignore fields in content not part of the content type
-            if (!isset($fieldIdentifierMap[$spiField->fieldDefinitionId])) {
+            if (!isset($fieldDefinitionsMap[$spiField->fieldDefinitionId])) {
                 continue;
             }
 
+            $fieldDefinition = $fieldDefinitionsMap[$spiField->fieldDefinitionId];
+
             if (!empty($prioritizedLanguages) && !in_array($spiField->languageCode, $prioritizedLanguages)) {
                 // If filtering is enabled we ignore fields in other languages then $prioritizedLanguages, if:
-                if ($alwaysAvailableLanguage === null) {
-                    // Ignore field if we don't have $alwaysAvailableLanguageCode fallback
+                if ($spiField->languageCode !== $alwaysAvailableLanguage) {
+                    // field is not in $alwaysAvailableLanguageCode (or if it's null)
                     continue;
                 } elseif (!empty($fieldInFilterLanguagesMap[$spiField->fieldDefinitionId])) {
-                    // Ignore field if it exists in one of the filtered languages
-                    continue;
-                } elseif ($spiField->languageCode !== $alwaysAvailableLanguage) {
-                    // Also ignore if field is not in $alwaysAvailableLanguageCode
+                    // field already exists in one of the filtered languages
                     continue;
                 }
             }
 
-            $fields[] = new Field(
+            $fields[$fieldDefinition->position][] = new Field(
                 array(
                     'id' => $spiField->id,
                     'value' => $this->fieldTypeRegistry->getFieldType($spiField->type)
                         ->fromPersistenceValue($spiField->value),
                     'languageCode' => $spiField->languageCode,
-                    'fieldDefIdentifier' => $fieldIdentifierMap[$spiField->fieldDefinitionId],
+                    'fieldDefIdentifier' => $fieldDefinition->identifier,
                     'fieldTypeIdentifier' => $spiField->type,
                 )
             );
         }
 
-        return $fields;
+        // Sort fields by content type field definition priority
+        ksort($fields, SORT_NUMERIC);
+
+        // Flatten array
+        return array_merge(...$fields);
     }
 
     /**
